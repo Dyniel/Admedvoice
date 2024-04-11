@@ -1,7 +1,6 @@
 import streamlit as st
-from streamlit_webrtc import webrtc_streamer
+import time
 import speech_recognition as sr
-
 
 def recognize_speech_from_microphone(recognizer, microphone):
     with microphone as source:
@@ -20,7 +19,6 @@ def recognize_speech_from_microphone(recognizer, microphone):
         st.write("Could not request results from Google Speech Recognition service; {0}".format(e))
         return None
 
-
 def listen_and_edit_text():
     recognizer = sr.Recognizer()
     microphone = sr.Microphone()
@@ -28,23 +26,17 @@ def listen_and_edit_text():
     text = ""
     text_area = st.empty()
 
-    webrtc_ctx = webrtc_streamer(
-        key="audio-record",
-        audio=True,
-        # Ustawiamy parametr `processing_timeout` na 10 sekund
-        # żeby zakończyć nagrywanie po 10 sekundach nieaktywności
-        processing_timeout=10,
-    )
-
-    if webrtc_ctx.audio_receiver:
-        command = recognize_speech_from_microphone(recognizer, webrtc_ctx.audio_receiver)
+    while True:
+        command = recognize_speech_from_microphone(recognizer, microphone)
 
         if command:
             if "zakończ" in command.lower():
                 st.write("Zakończenie edycji.")
+                break
             else:
                 text += " " + command
                 text_area.text_area("Edytuj tekst", value=text)
+
 
 
 if __name__ == "__main__":
