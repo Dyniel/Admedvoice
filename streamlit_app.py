@@ -1,58 +1,49 @@
 import streamlit as st
-from streamlit_webrtc import webrtc_streamer, get_audio_devices
+from streamlit_webrtc import webrtc_streamer, WebRtcMode, RTCConfiguration, AudioProcessorBase
+import asyncio
 import speech_recognition as sr
 
-def recognize_speech_from_microphone(recognizer, microphone):
-    with microphone as source:
-        st.write("Proszę mówić...")
-        recognizer.adjust_for_ambient_noise(source)
-        audio = recognizer.listen(source)
+RTC_CONFIGURATION = RTCConfiguration({
+    "iceServers": [{"urls": ["stun:stun.l.google.com:19302"]}]
+})
 
-    try:
-        speech_to_text = recognizer.recognize_google(audio, language="pl-PL")
-        st.write("Rozpoznano: " + speech_to_text)
-        return speech_to_text
-    except sr.UnknownValueError:
-        st.write("Google Speech Recognition could not understand audio")
-        return None
-    except sr.RequestError as e:
-        st.write("Could not request results from Google Speech Recognition service; {0}".format(e))
-        return None
+class AudioProcessor(AudioProcessorBase):
+    def __init__(self) -> None:
+        self.recognizer = sr.Recognizer()
+        self.transcript = ""
 
-def listen_and_edit_text():
-    recognizer = sr.Recognizer()
+    async def recv_queued(self, frames):
+        while frames:
+            frame = frames.pop(0)
+            if frame:
+                data = frame.to_ndarray()
+                try:
+                    audio = sr.AudioData(data.tobytes(), frame.sample_rate, frame.sample_width)
+                    text = self.recognizer.recognize_google(audio, language="pl-PL")
+                    self.transcript += text + " "
+                except Exception as e:
+                    print(e)
+                    continue
 
-    audio_devices = get_audio_devices()
-    selected_audio_device = st.selectbox("Wybierz urządzenie audio", audio_devices)
+        return self.transcript
 
-    microphone = sr.Microphone(device_index=selected_audio_device)
+def main():
+    webrtc_ctx = webrtc_streamer(key="example",
+                                 mode=WebRtcMode.SENDONLY,
+                                 rtc_configuration=RTC_CONFIGURATION,
+                                 audio_processor_factory=AudioProcessor,
+                                 media_stream_constraints={"video": False, "audio": True},
+                                 async_processing=True)
 
-    text = ""
-    text_area = st.empty()
-
-    webrtc_ctx = webrtc_streamer(
-        key="audio-record",
-        audio=True,
-        # Ustawiamy parametr `processing_timeout` na 10 sekund
-        # żeby zakończyć nagrywanie po 10 sekundach nieaktywności
-        processing_timeout=10,
-        audio_receiver_bitrate=16000,  # Dodajemy tę linijkę żeby ustawić bitrate na 16 kHz
-        rtc_configuration={"iceServers": [{"urls": ["stun:stun.l.google.com:19302"]}]}
-    )
-
-    if webrtc_ctx.audio_receiver:
-        command = recognize_speech_from_microphone(recognizer, microphone)
-
-        if command:
-            if "zakończ" in command.lower():
-                st.write("Zakończenie edycji.")
-            else:
-                text += " " + command
-                text_area.text_area("Edytuj tekst", value=text)
-
+    if webrtc_ctx.state.playing:
+        audio_processor: AudioProcessor = webrtc_ctx.audio_processor
+        if audio_processor:
+            transcript = audio_processor.transcript
+            editable_transcript = st.text_area("Edytuj transkrypcję", value=transcript, height=300)
+            if st.button("Zakończ edycję"):
+                st.write("Zakończono edycję. Ostateczny tekst:")
+                st.write(editable_transcript)
 
 if __name__ == "__main__":
-    st.title("Edytor dźwiękowy")
-    st.write("Naciśnij przycisk poniżej, aby rozpocząć edycję tekstu.")
-    if st.button("Rozpocznij edycję"):
-        listen_and_edit_text()
+    st.title("Streamlit Edytor Tekstu na Żywo")
+    main()
