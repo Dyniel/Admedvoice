@@ -1,0 +1,4 @@
+spacy~=3.7.4
+docx~=0.2.4
+streamlit~=1.33.0
+SpeechRecognition~=3.10.3
